@@ -10,4 +10,4 @@ build/
 *.spec
 *.log
 my_tasks.txt
-
+my_test.py
