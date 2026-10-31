@@ -345,9 +345,10 @@ class _ImageDisplay(QWidget):
     # --- Pixmap / clear ---
 
     def set_pixmap(self, pixmap: QPixmap, array: np.ndarray) -> None:
-        """Display *pixmap* (derived from *array*).  Triggers auto-fit."""
         self._pixmap = pixmap
         self._array  = array
+        if self._overlay is not None and pixmap is not None:
+            self._overlay.set_image_size(pixmap.width(), pixmap.height())
         self._fit()
 
     def clear(self) -> None:
@@ -898,6 +899,13 @@ class ImageViewer(QGroupBox):
         else:
             arr = convert_mode(self._source, mode)
         self._current = arr
+        
+        # --- FIX: Ensure overlay knows the image width & height for line clipping ---
+        h = arr.shape[0] if arr.ndim >= 1 else 0
+        w = arr.shape[1] if arr.ndim >= 2 else 0
+        self._overlay.set_image_size(w, h)
+        # ----------------------------------------------------------------------------
+        
         px = array_to_qpixmap(arr)
         self._display.set_pixmap(px, arr)
         self._update_title()

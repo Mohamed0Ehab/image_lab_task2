@@ -44,6 +44,103 @@ class FeatureOutput:
     snake:  Optional[SnakeResult] = None
 
 
+# ============================================================================
+# Shared parameter schemas
+# ============================================================================
+
+CANNY_PARAMS = {
+    "sigma": {
+        "type": "float",
+        "min": 0.5,
+        "max": 5.0,
+        "step": 0.1,
+        "default": 1.4,
+        "label": "Gaussian Sigma",
+        "decimals": 1,
+    },
+    "low_t": {
+        "type": "int",
+        "min": 0,
+        "max": 255,          # was 1000
+        "step": 1,
+        "default": 50,
+        "label": "Canny Low Threshold",
+    },
+    "high_t": {
+        "type": "int",
+        "min": 1,
+        "max": 255,          # was 1500
+        "step": 1,
+        "default": 150,
+        "label": "Canny High Threshold",
+    },
+}
+
+
+def _prefixed_schema(
+    schema: dict,
+    prefix: str,
+) -> dict:
+    """Create an independent schema with prefixed parameter keys."""
+
+    return {
+        f"{prefix}{key}": {
+            **spec,
+            "label": (
+                f"{prefix.replace('_', ' ').title()} "
+                f"{spec.get('label', key)}"
+            ),
+        }
+        for key, spec in schema.items()
+    }
+
+
+HOUGH_CANNY_PARAMS = _prefixed_schema(
+    CANNY_PARAMS,
+    "canny_",
+)
+
+
+HOUGH_PARAMS = {
+    **HOUGH_CANNY_PARAMS,
+
+    "threshold": {
+        "type": "int",
+        "min": 1,
+        "max": 1000,
+        "step": 1,
+        "default": 100,
+        "label": "Hough Vote Threshold",
+    },
+
+    "theta_step": {
+        "type": "int",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "default": 1,
+        "label": "Angular Resolution (degrees)",
+    },
+
+    "min_rho_distance": {
+        "type": "int",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "default": 4,
+        "label": "Minimum Rho Separation (px)",
+    },
+
+    "min_theta_distance": {
+        "type": "int",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "default": 3,
+        "label": "Minimum Angle Separation (degrees)",
+    },
+}
+
 # ===========================================================================
 # CATALOG  (built from FeatureEntry objects – never hardcode names/keys elsewhere)
 # ===========================================================================
@@ -81,16 +178,13 @@ CATALOG: dict[str, list[FeatureEntry]] = {
             name="Hough Lines",
             group="Lines",
             params_schema={
-                "threshold": {
-                    "type": "int", "min": 1, "max": 500,
-                    "step": 1, "default": 100,
-                    "label": "Vote Threshold",
-                },
+                key: dict(spec)
+                for key, spec in HOUGH_PARAMS.items()
             },
             kind="lines",
             func=hough_lines,
-        )
-    ],
+        ),
+    ],  
     "Circles": [
         FeatureEntry(
             id="hough_circles",
@@ -218,10 +312,38 @@ def run_feature(
         return FeatureOutput(result=result)
 
     if op == "hough_lines":
-        gray   = ensure_gray(input_array)
-        shapes = entry.func(gray, params["threshold"])
-        return FeatureOutput(result=None, shapes=shapes)
+        gray = ensure_gray(input_array)
 
+        # First stage: Canny edge detection.
+        # Every parameter comes from the sidebar.
+        edges = canny(
+            gray,
+            sigma=params["canny_sigma"],
+            low_t=params["canny_low_t"],
+            high_t=params["canny_high_t"],
+        )
+
+        # Second stage: Hough line detection.
+        shapes = entry.func(
+            edges,
+            threshold=params["threshold"],
+            theta_step=params["theta_step"],
+            min_rho_distance=params["min_rho_distance"],
+            min_theta_distance=params["min_theta_distance"],
+        )
+
+        logger.info(
+            "Hough Lines: %d edge pixels, %d detected lines",
+            np.count_nonzero(edges),
+            len(shapes),
+        )
+
+        return FeatureOutput(
+            result=None,
+            shapes=shapes,
+        )
+
+    
     if op == "hough_circles":
         gray   = ensure_gray(input_array)
         shapes = entry.func(gray, params["r_min"], params["r_max"])

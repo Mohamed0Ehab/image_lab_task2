@@ -735,6 +735,7 @@ class MainWindow(QMainWindow):
         """Handle the FeatureOutput from run_feature."""
         if entry.kind == "image":
             if output.result is not None:
+                out_win.overlay().clear()  # <-- CLEAR PREVIOUS OVERLAYS HERE
                 out_win.set_source_and_display(output.result, op_name=entry.name)
         elif entry.kind in ("lines", "circles", "ellipses"):
             # Shape detection: copy input image if output is a different window
@@ -743,6 +744,8 @@ class MainWindow(QMainWindow):
             else:
                 out_win._history.append(entry.name)
                 out_win._update_title()
+
+            out_win.overlay().clear()  # <-- Also clear previous shapes before drawing new ones
 
             # Set overlays
             if entry.kind == "lines":
@@ -753,9 +756,6 @@ class MainWindow(QMainWindow):
                 out_win.overlay().set_ellipses(output.shapes)
 
             out_win.display_widget().update()
-
-        self._sidebar.update_history(self._get_viewer(self._active_window_id).history())
-
     # =========================================================================
     # Snake QThread Worker & Live Animation
     # =========================================================================
