@@ -102,10 +102,12 @@ class Sidebar(QScrollArea):
     op_selected              = Signal(str)         # op_id, "" = none
     snake_mode_requested     = Signal(bool, bool)  # enabled, polygon_mode
     clear_contour_requested  = Signal()
+    undo_contour_point_requested = Signal()        # undo last polygon point
 
     animation_play           = Signal()
     animation_pause          = Signal()
     animation_step           = Signal()
+    animation_step_back      = Signal()
     animation_speed_changed  = Signal(int)         # ms per frame
 
     overlay_lines_toggled    = Signal(bool)
@@ -432,6 +434,14 @@ class Sidebar(QScrollArea):
         self._btn_clear_contour.clicked.connect(self.clear_contour_requested.emit)
         cl.addWidget(self._btn_clear_contour)
 
+        self._btn_undo_point = QPushButton("↩ Undo Point  (Ctrl+Z)")
+        self._btn_undo_point.setToolTip(
+            "Remove the last placed polygon point.\n"
+            "You can also press Ctrl+Z while the image is focused."
+        )
+        self._btn_undo_point.clicked.connect(self._on_undo_contour_point)
+        cl.addWidget(self._btn_undo_point)
+
         sep1 = QFrame(); sep1.setFrameShape(QFrame.Shape.HLine)
         sep1.setStyleSheet("color:#45475a;"); cl.addWidget(sep1)
 
@@ -460,16 +470,19 @@ class Sidebar(QScrollArea):
 
         anim_row = QWidget(); arl = QHBoxLayout(anim_row)
         arl.setContentsMargins(0, 0, 0, 0); arl.setSpacing(4)
-        self._btn_play  = QPushButton("▶")
-        self._btn_pause = QPushButton("⏸")
-        self._btn_step  = QPushButton("⏭ Step")
-        for b in (self._btn_play, self._btn_pause, self._btn_step):
+        self._btn_play_pause = QPushButton("▶ Play")
+        self._btn_play_pause.setCheckable(True)
+        self._btn_step_back = QPushButton("⏮ Back")
+        self._btn_step_back.setToolTip("Step back one frame")
+        self._btn_step  = QPushButton("⏭ Fwd")
+        self._btn_step.setToolTip("Step forward one frame")
+        for b in (self._btn_play_pause, self._btn_step_back, self._btn_step):
             b.setFixedHeight(28)
-        self._btn_play.clicked.connect(self._on_play)
-        self._btn_pause.clicked.connect(self._on_pause)
+        self._btn_play_pause.clicked.connect(self._on_play_pause_toggle)
+        self._btn_step_back.clicked.connect(self.animation_step_back.emit)
         self._btn_step.clicked.connect(self.animation_step.emit)
-        arl.addWidget(self._btn_play)
-        arl.addWidget(self._btn_pause)
+        arl.addWidget(self._btn_play_pause)
+        arl.addWidget(self._btn_step_back)
         arl.addWidget(self._btn_step)
         cl.addWidget(anim_row)
 
@@ -502,7 +515,7 @@ class Sidebar(QScrollArea):
 
         # Disabled until a snake result arrives
         for w in (
-            self._btn_play, self._btn_pause, self._btn_step,
+            self._btn_play_pause, self._btn_step_back, self._btn_step,
             self._speed_slider, self._btn_copy_result,
         ):
             w.setEnabled(False)
@@ -621,13 +634,19 @@ class Sidebar(QScrollArea):
         if a != b:
             self.swap_windows_requested.emit(a, b)
 
-    def _on_play(self) -> None:
-        self._anim_playing = True
-        self.animation_play.emit()
+    def _on_play_pause_toggle(self, checked: bool) -> None:
+        if checked:
+            self._anim_playing = True
+            self._btn_play_pause.setText("⏸ Pause")
+            self.animation_play.emit()
+        else:
+            self._anim_playing = False
+            self._btn_play_pause.setText("▶ Play")
+            self.animation_pause.emit()
 
-    def _on_pause(self) -> None:
-        self._anim_playing = False
-        self.animation_pause.emit()
+    def _on_undo_contour_point(self) -> None:
+        """Signal the display to remove the last polygon point."""
+        self.undo_contour_point_requested.emit()
 
     def _copy_snake_result(self) -> None:
         from PySide6.QtWidgets import QApplication
@@ -695,8 +714,8 @@ class Sidebar(QScrollArea):
         self._snake_area.setText(f"{result.area:.2f}")
         self._snake_npts.setText(str(len(result.pts)))
         has_hist = bool(result.history)
-        self._btn_play.setEnabled(has_hist)
-        self._btn_pause.setEnabled(has_hist)
+        self._btn_play_pause.setEnabled(has_hist)
+        self._btn_step_back.setEnabled(has_hist)
         self._btn_step.setEnabled(has_hist)
         self._speed_slider.setEnabled(has_hist)
         self._btn_copy_result.setEnabled(True)
@@ -708,8 +727,12 @@ class Sidebar(QScrollArea):
             self._snake_area, self._snake_npts,
         ):
             lbl.setText("—")
+        # Reset play/pause button to its initial play state
+        self._btn_play_pause.setChecked(False)
+        self._btn_play_pause.setText("▶ Play")
+        self._anim_playing = False
         for w in (
-            self._btn_play, self._btn_pause, self._btn_step,
+            self._btn_play_pause, self._btn_step_back, self._btn_step,
             self._speed_slider, self._btn_copy_result,
         ):
             w.setEnabled(False)

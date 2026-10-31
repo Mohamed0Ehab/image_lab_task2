@@ -321,12 +321,13 @@ class MainWindow(QMainWindow):
         self._sidebar.snake_mode_requested.connect(self._on_snake_mode_requested)
         self._sidebar.clear_contour_requested.connect(self._on_clear_contour)
 
-        # Snake animation signals from sidebar
         self._sidebar.animation_play.connect(self._on_anim_play)
         self._sidebar.animation_pause.connect(self._on_anim_pause)
         self._sidebar.animation_step.connect(self._on_anim_step)
+        self._sidebar.animation_step_back.connect(self._on_anim_step_back)
         self._sidebar.animation_speed_changed.connect(self._on_anim_speed_changed)
         self._sidebar.cancel_snake_button().clicked.connect(self._on_cancel_snake)
+        self._sidebar.undo_contour_point_requested.connect(self._on_undo_contour_point)
 
         # Overlay style toggles & colors from sidebar
         self._sidebar.overlay_lines_toggled.connect(self._on_overlay_lines_toggled)
@@ -672,6 +673,16 @@ class MainWindow(QMainWindow):
         in_a, _, _ = self._sidebar.routing_ids()
         self._get_viewer(in_a).clear_contour()
 
+    def _on_undo_contour_point(self) -> None:
+        """Remove the last polygon point from the active snake input viewer."""
+        in_a, _, _ = self._sidebar.routing_ids()
+        display = self._get_viewer(in_a).display_widget()
+        pts = display.get_contour_pts()
+        if pts:
+            pts.pop()
+            display.set_contour_pts(pts)
+            display.update()
+
     def _on_apply_requested(
         self,
         op_id: str,
@@ -781,6 +792,22 @@ class MainWindow(QMainWindow):
                 (cx + r * np.cos(2 * np.pi * i / n), cy + r * np.sin(2 * np.pi * i / n))
                 for i in range(n)
             ]
+        else:
+            # Polygon contour validation
+            if len(pts) < 3:
+                show_error(
+                    AppError(
+                        "Please place at least 3 points on the polygon contour "
+                        "before running Active Contour."
+                    ),
+                    self,
+                )
+                return
+            # Auto-close visually: update display so contour appears closed in UI
+            if pts[0] != pts[-1]:
+                in_win.display_widget().set_contour_pts(list(pts) + [pts[0]])
+                in_win.display_widget().update()
+            # Strip duplicate tail before passing to algorithm (pts[0] != pts[-1])
 
         gray = ensure_gray(in_arr)
         sp = SnakeParams(
@@ -849,6 +876,14 @@ class MainWindow(QMainWindow):
         if not self._anim_history or self._anim_target_viewer is None:
             return
         self._anim_frame_idx = (self._anim_frame_idx + 1) % len(self._anim_history)
+        pts = self._anim_history[self._anim_frame_idx]
+        self._anim_target_viewer.overlay().set_snake(pts)
+        self._anim_target_viewer.display_widget().update()
+
+    def _on_anim_step_back(self) -> None:
+        if not self._anim_history or self._anim_target_viewer is None:
+            return
+        self._anim_frame_idx = (self._anim_frame_idx - 1) % len(self._anim_history)
         pts = self._anim_history[self._anim_frame_idx]
         self._anim_target_viewer.overlay().set_snake(pts)
         self._anim_target_viewer.display_widget().update()

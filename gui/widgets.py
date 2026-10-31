@@ -372,8 +372,18 @@ class _ImageDisplay(QWidget):
 
     def set_snake_mode(self, enabled: bool, polygon: bool = True) -> None:
         """Enter (or leave) snake contour input mode."""
+        prev_polygon = self._polygon_mode
         self._snake_mode   = enabled
         self._polygon_mode = polygon
+        # Clear the opposite contour type when switching modes
+        if enabled:
+            if polygon and not prev_polygon:
+                # Switched from circle → polygon: clear circle
+                self._circle_center = None
+                self._circle_radius = 0.0
+            elif not polygon and prev_polygon:
+                # Switched from polygon → circle: clear polygon points
+                self._contour_pts = []
         self.setCursor(
             Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor
         )
@@ -640,6 +650,15 @@ class _ImageDisplay(QWidget):
                 self.contour_changed.emit(list(self._contour_pts))
             elif event.key() == Qt.Key.Key_Escape:
                 self.clear_contour()
+            elif (
+                event.key() == Qt.Key.Key_Z
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and self._polygon_mode
+                and self._contour_pts
+            ):
+                self._contour_pts.pop()
+                self.update()
+                self.contour_changed.emit(list(self._contour_pts))
 
     # --- Helpers ---
 
