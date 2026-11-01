@@ -710,8 +710,10 @@ class Sidebar(QScrollArea):
     def update_snake_result(self, result) -> None:
         """Populate the snake results box from a SnakeResult."""
         self._snake_chain.setText(str(result.chain)[:60] or "—")
-        self._snake_perim.setText(f"{result.perimeter:.2f}")
-        self._snake_area.setText(f"{result.area:.2f}")
+        perim_cm, perim_px = result.perimeter
+        area_cm, area_px = result.area
+        self._snake_perim.setText(f"{perim_px:.1f} px  /  {perim_cm:.2f} cm")
+        self._snake_area.setText(f"{area_px:.1f} px²  /  {area_cm:.2f} cm²")
         self._snake_npts.setText(str(len(result.pts)))
         has_hist = bool(result.history)
         self._btn_play_pause.setEnabled(has_hist)
