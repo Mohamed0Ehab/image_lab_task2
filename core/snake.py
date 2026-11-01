@@ -98,12 +98,12 @@ def image_energy(mag, pnt):
 
 def calc_perimeter(contour):
     n = len(contour)
-    perimeter = 0.0
+    perimeter_pixel = 0.0
     for i in range(n):
         p1 = contour[i]
         p2 = contour[(i+1) % n]
-        perimeter +=  hypot(p1, p2)
-    return perimeter
+        perimeter_pixel +=  hypot(p1, p2)
+    return (convert_pixel_cm(perimeter_pixel), perimeter_pixel )
 
 def calc_area(contour):
     n = len(contour)
@@ -112,7 +112,12 @@ def calc_area(contour):
         p1 = contour[i]
         p2 = contour[(i+1) % n]
         s += (p1[0] * p2[1]) - (p2[0] * p1[1]) 
-    return abs(s)/2
+        area_pixel = abs(s)/2
+    return (convert_pixel_cm(area_pixel), area_pixel)
+
+def convert_pixel_cm(value):
+    cm_per_px = 0.05
+    return value * cm_per_px
 
 def get_chain_code(contour):
     # (dx, dy) -> Freeman code; y grows downward in images
