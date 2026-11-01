@@ -250,7 +250,7 @@ CATALOG: dict[str, list[FeatureEntry]] = {
                 },
                 "gamma": {
                     "type": "float", "min": 0.0, "max": 5.0,
-                    "step": 0.1, "default": 1.0,
+                    "step": 0.1, "default": 2.0,
                     "label": "Gamma (step size)", "decimals": 1,
                 },
                 "max_iter": {
