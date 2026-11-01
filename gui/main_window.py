@@ -782,16 +782,25 @@ class MainWindow(QMainWindow):
         """Launch the snake worker thread so UI never freezes."""
         # Grab initial contour points from input window
         pts = in_win.get_contour_pts()
-        if not pts:
-            # Fallback to circle from center with init_radius if no contour drawn
-            h, w = in_arr.shape[:2]
-            cx, cy = w / 2.0, h / 2.0
-            r = float(params.get("init_radius", 50))
-            n = 32
-            pts = [
-                (cx + r * np.cos(2 * np.pi * i / n), cy + r * np.sin(2 * np.pi * i / n))
-                for i in range(n)
-            ]
+        circle_pts = in_win.get_circle_as_polygon()
+        is_circle_contour = False
+
+        if not pts and circle_pts:
+            # Circle mode: use the user-drawn circle as the initial contour
+            pts = circle_pts
+            is_circle_contour = True
+        elif not pts:
+            # No contour drawn at all — show an error
+            show_error(
+                AppError(
+                    "No contour drawn.\n\n"
+                    "Please draw an initial contour before running Active Contour:\n"
+                    "• Polygon mode: click to place at least 3 points on the image.\n"
+                    "• Drag circle mode: click and drag to draw a circle around the object."
+                ),
+                self,
+            )
+            return
         else:
             # Polygon contour validation
             if len(pts) < 3:
@@ -810,6 +819,12 @@ class MainWindow(QMainWindow):
             # Strip duplicate tail before passing to algorithm (pts[0] != pts[-1])
 
         gray = ensure_gray(in_arr)
+        h_img, w_img = gray.shape[:2]
+        # Clamp all contour points to valid image pixel coordinates
+        pts = [
+            (max(0.0, min(float(x), w_img - 1)), max(0.0, min(float(y), h_img - 1)))
+            for x, y in pts
+        ]
         sp = SnakeParams(
             alpha=float(params.get("alpha", 1.0)),
             beta=float(params.get("beta", 1.0)),
