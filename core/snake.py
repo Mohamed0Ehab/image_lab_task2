@@ -5,8 +5,10 @@ Member 3 must replace the body.  Signature must not change.
 from __future__ import annotations
 
 import numpy as np
+from math import sqrt
 
 from core.canny_lines import sobel_gradients
+from scipy.ndimage import gaussian_filter
 from core.types import SnakeParams, SnakeResult
 
 
@@ -30,15 +32,20 @@ def run_snake(
 
     image = gray.copy()
     _, _, mag, _ = sobel_gradients(image)
+    mag = gaussian_filter(mag.astype(float), sigma=8)   # extra blur for noise reduction: Sobel's 3x3 smoothing is too small to reach distant points
     mag = normalize(mag)
 
-    alpha = params['alpha']
-    beta = params['beta']
-    gamma = params['gamma']
-    max_iter = params['max_iter']
-    
     contour = init_pts.copy()
     hist = [contour.copy()]
+    
+    alpha, beta = scale_weights(contour, params.alpha, params.beta)
+    gamma = params.gamma
+    max_iter = params.max_iter
+    
+    n = len(contour)
+    d2 = sum(hypot(contour[i], contour[(i+1) % n])**2 for i in range(n)) / n   # mean squared spacing
+    alpha = params.alpha / d2
+    beta = params.beta / d2
     
     for iter in range(max_iter): # iterate through contours
         moved = 0
@@ -80,29 +87,77 @@ def total_energy(p0, p1, p2, alpha, beta, gamma, mag):
 
 
 def elastic_energy(p1, p2):
-    pass
+    return (p2[0] - p1[0])**2 + (p2[1] - p1[1])**2
 
 def smooth_energy(p0, p1, p2):
-    pass
+    return (p2[0] - 2*p1[0] + p0[0])**2 + (p2[1] - 2*p1[1] + p0[1])**2
 
 def image_energy(mag, pnt):
-    r, c = pnt                      # (row, col)
+    r, c = pnt[1], pnt[0]             # pnt is (x, y): row = y, col = x
     return -mag[int(r), int(c)]
 
 def calc_perimeter(contour):
-    pass
+    n = len(contour)
+    perimeter = 0.0
+    for i in range(n):
+        p1 = contour[i]
+        p2 = contour[(i+1) % n]
+        perimeter +=  hypot(p1, p2)
+    return perimeter
 
 def calc_area(contour):
-    pass
+    n = len(contour)
+    s = 0.0
+    for i in range(n):
+        p1 = contour[i]
+        p2 = contour[(i+1) % n]
+        s += (p1[0] * p2[1]) - (p2[0] * p1[1]) 
+    return abs(s)/2
 
 def get_chain_code(contour):
-    pass
+    # (dx, dy) -> Freeman code; y grows downward in images
+    DIRS = {( 1,  0): 0, ( 1, -1): 1, ( 0, -1): 2, (-1, -1): 3,
+            (-1,  0): 4, (-1,  1): 5, ( 0,  1): 6, ( 1,  1): 7}
+
+    n = len(contour)
+    chain = []
+    for i in range(n):
+        x1, y1 = int(contour[i][0]), int(contour[i][1])
+        x2, y2 = int(contour[(i+1) % n][0]), int(contour[(i+1) % n][1])
+
+        # Bresenham from (x1, y1) to (x2, y2); record each 1-pixel step
+        dx, dy = abs(x2 - x1), abs(y2 - y1)
+        sx = 1 if x2 > x1 else -1
+        sy = 1 if y2 > y1 else -1
+        err = dx - dy
+        x, y = x1, y1
+        while (x, y) != (x2, y2):
+            e2 = 2 * err
+            step_x = step_y = 0
+            if e2 > -dy:
+                err -= dy
+                x += sx
+                step_x = sx
+            if e2 < dx:
+                err += dx
+                y += sy
+                step_y = sy
+            chain.append(DIRS[(step_x, step_y)])
+    return chain
 
 def get_candidate(pnt, image):
-    pass
+    h, w = image.shape[:2]
+    x, y = int(pnt[0]), int(pnt[1])
 
-def extract_xy(list):
-    return [t[:2] for t in list]
+    candidates = [(x, y)]                       # current point first
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue                        # already added
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h:     # x vs width, y vs height
+                candidates.append((nx, ny))
+    return candidates
 
 def get_min(E):
     pnt_3d = min(E, key = lambda x: x[2])
@@ -110,5 +165,17 @@ def get_min(E):
 
 def normalize(mag):
     max_mag = mag.max()
-    if max_mag > 0:
-        return mag / max_mag
+    if max_mag == 0:
+        raise ZeroDivisionError("Gradient magnitude is all zeros (image has no edges)")
+    return mag / max_mag
+
+def hypot(p1, p2):
+    return sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+
+def scale_weights(contour, alpha, beta):
+    """Divide alpha and beta by the mean squared point spacing, so they are scale-free."""
+    n = len(contour)
+    d2 = sum(hypot(contour[i], contour[(i+1) % n])**2 for i in range(n)) / n
+    if d2 == 0:                      # all points identical: avoid division by zero
+        return alpha, beta
+    return alpha / d2, beta / d2
