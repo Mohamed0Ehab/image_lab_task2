@@ -327,9 +327,10 @@ class _ImageDisplay(QWidget):
         self._polygon_mode:   bool                         = True    # vs. circle
         self._contour_pts:    list[tuple[float, float]]    = []
         self._drag_pt_idx:    Optional[int]                = None
-        self._circle_center:  Optional[tuple[float, float]] = None
-        self._circle_radius:  float                         = 0.0
-        self._circle_dragging: bool                         = False
+        self._circle_center:       Optional[tuple[float, float]] = None
+        self._circle_drag_origin:  Optional[tuple[float, float]] = None
+        self._circle_radius:       float                         = 0.0
+        self._circle_dragging:     bool                         = False
 
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -568,6 +569,8 @@ class _ImageDisplay(QWidget):
                     self.contour_changed.emit(list(self._contour_pts))
             else:
                 ix, iy = self._w2i(pos.x(), pos.y())
+                # Store the press point as the drag origin (one edge of circle)
+                self._circle_drag_origin = (ix, iy)
                 self._circle_center   = (ix, iy)
                 self._circle_radius   = 0.0
                 self._circle_dragging = True
@@ -599,8 +602,10 @@ class _ImageDisplay(QWidget):
                 self.contour_changed.emit(list(self._contour_pts))
             elif not self._polygon_mode and self._circle_dragging:
                 ix, iy = self._w2i(pos.x(), pos.y())
-                cx, cy = self._circle_center  # type: ignore[misc]
-                self._circle_radius = math.hypot(ix - cx, iy - cy)
+                ox, oy = self._circle_drag_origin  # type: ignore[misc]
+                # Center is the midpoint between origin and current cursor
+                self._circle_center = ((ox + ix) / 2, (oy + iy) / 2)
+                self._circle_radius = math.hypot(ix - ox, iy - oy) / 2
                 self.update()
         else:
             if self._drag_start is not None:
