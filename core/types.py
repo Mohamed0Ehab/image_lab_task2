@@ -46,6 +46,6 @@ class SnakeResult:
     """Output of the active-contour algorithm."""
     pts: list              # [(x, y), …] – final contour points
     chain: str             # Freeman 8-direction chain-code string
-    perimeter: float
-    area: float
+    perimeter: tuple       # Tuple result in (cm, pixel)
+    area: tuple            # Tuple result in (cm2, pixel)
     history: list          # list[list[(x, y)]] – one entry per iteration
