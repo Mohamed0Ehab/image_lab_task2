@@ -13,7 +13,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from core.canny_lines      import canny, hough_lines
-from core.circles_ellipses import hough_circles, detect_ellipses
+from core.circles_ellipses import detect_circles, detect_ellipses
 from core.snake            import run_snake
 from core.types            import SnakeParams, SnakeResult
 
@@ -191,6 +191,11 @@ CATALOG: dict[str, list[FeatureEntry]] = {
             name="Hough Circles",
             group="Circles",
             params_schema={
+                # Canny stage (same ranges/defaults as the Canny entry)
+                **{
+                    key: dict(spec)
+                    for key, spec in HOUGH_CANNY_PARAMS.items()
+                },
                 "r_min": {
                     "type": "int", "min": 1, "max": 300,
                     "step": 1, "default": 10,
@@ -201,9 +206,25 @@ CATALOG: dict[str, list[FeatureEntry]] = {
                     "step": 1, "default": 100,
                     "label": "Max Radius (px)",
                 },
+                # True = gradient (fast, default), False = standard 3-D accumulator
+                "use_gradient": {
+                    "type": "bool",
+                    "label": "Use Gradient Method (faster)",
+                    "default": True,
+                },
+                "threshold": {
+                    "type": "float", "min": 0.1, "max": 1.0,
+                    "step": 0.05, "default": 0.5,
+                    "label": "Vote Ratio", "decimals": 2,
+                },
+                "max_circles": {
+                    "type": "int", "min": 1, "max": 200,
+                    "step": 1, "default": 50,
+                    "label": "Max Circles",
+                },
             },
             kind="circles",
-            func=hough_circles,
+            func=detect_circles,
         )
     ],
     "Ellipses": [
@@ -212,6 +233,11 @@ CATALOG: dict[str, list[FeatureEntry]] = {
             name="Ellipse Detection",
             group="Ellipses",
             params_schema={
+                # Canny stage (same ranges/defaults as the Canny entry)
+                **{
+                    key: dict(spec)
+                    for key, spec in HOUGH_CANNY_PARAMS.items()
+                },
                 "min_axis": {
                     "type": "int", "min": 1, "max": 200,
                     "step": 1, "default": 10,
@@ -223,9 +249,9 @@ CATALOG: dict[str, list[FeatureEntry]] = {
                     "label": "Max Axis (px)",
                 },
                 "vote_threshold": {
-                    "type": "int", "min": 1, "max": 200,
+                    "type": "int", "min": 1, "max": 100,
                     "step": 1, "default": 50,
-                    "label": "Vote Threshold",
+                    "label": "Vote Threshold (%)",
                 },
             },
             kind="ellipses",
@@ -250,7 +276,7 @@ CATALOG: dict[str, list[FeatureEntry]] = {
                 },
                 "gamma": {
                     "type": "float", "min": 0.0, "max": 5.0,
-                    "step": 0.1, "default": 1.0,
+                    "step": 0.1, "default": 2.0,
                     "label": "Gamma (step size)", "decimals": 1,
                 },
                 "max_iter": {
@@ -280,6 +306,16 @@ _BY_ID: dict[str, FeatureEntry] = {
 def get_entry(op_id: str) -> Optional[FeatureEntry]:
     """Return the FeatureEntry for *op_id*, or None."""
     return _BY_ID.get(op_id)
+
+
+def _canny_edges(gray: np.ndarray, params: dict) -> np.ndarray:
+    """Run the Canny stage using the ``canny_*`` sidebar parameters."""
+    return canny(
+        gray,
+        sigma=params["canny_sigma"],
+        low_t=params["canny_low_t"],
+        high_t=params["canny_high_t"],
+    )
 
 
 # ===========================================================================
@@ -346,17 +382,45 @@ def run_feature(
     
     if op == "hough_circles":
         gray   = ensure_gray(input_array)
-        shapes = entry.func(gray, params["r_min"], params["r_max"])
+
+        # First stage: Canny edge detection (binary edge map, not raw gray).
+        edges = _canny_edges(gray, params)
+
+        method = "gradient" if bool(params.get("use_gradient", True)) else "standard"
+        shapes = entry.func(
+            edges,
+            params["r_min"],
+            params["r_max"],
+            method=method,
+            threshold=float(params.get("threshold", 0.5)),
+            max_circles=int(params.get("max_circles", 50)),
+        )
+
+        logger.info(
+            "Hough Circles (%s): %d edge pixels, %d detected circles",
+            method,
+            np.count_nonzero(edges),
+            len(shapes),
+        )
+
         return FeatureOutput(result=None, shapes=shapes)
 
     if op == "detect_ellipses":
         gray   = ensure_gray(input_array)
+
+        # First stage: Canny edge detection (binary edge map, not raw gray).
+        edges = _canny_edges(gray, params)
+
         ep     = {
             k: params[k]
-            for k in ("min_axis", "max_axis", "vote_threshold")
+            for k in ("min_axis", "max_axis")
             if k in params
         }
-        shapes = entry.func(gray, **ep)
+        # GUI slider is a percentage (1..100); core expects a fraction (0, 1].
+        vote_pct = float(params.get("vote_threshold", 50))
+        ep["threshold"] = min(max(vote_pct / 100.0, 0.01), 1.0)
+
+        shapes = entry.func(edges, **ep)
         return FeatureOutput(result=None, shapes=shapes)
 
     if op == "run_snake":

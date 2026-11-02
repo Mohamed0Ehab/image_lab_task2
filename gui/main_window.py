@@ -70,6 +70,46 @@ class SnakeWorker(QThread):
 
 
 # ===========================================================================
+# Generic background worker for all standard features
+# (Canny, Hough Lines, Hough Circles, Ellipses)
+# ===========================================================================
+
+class FeatureWorker(QThread):
+    """Background worker for any run_feature() call so the UI stays responsive.
+
+    Used for every feature that is NOT the Snake algorithm (which has its own
+    SnakeWorker).  Emits result_ready with a FeatureOutput on success, or
+    error_occurred with the exception on failure.
+    """
+
+    result_ready   = Signal(object)      # FeatureOutput
+    error_occurred = Signal(Exception)
+
+    def __init__(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        params: dict,
+        second: Optional[np.ndarray] = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._entry  = entry
+        self._in_arr = in_arr
+        self._params = params
+        self._second = second
+
+    def run(self) -> None:
+        try:
+            output = run_feature(
+                self._entry, self._in_arr, self._params, second=self._second
+            )
+            self.result_ready.emit(output)
+        except Exception as exc:
+            self.error_occurred.emit(exc)
+
+
+# ===========================================================================
 # MainWindow
 # ===========================================================================
 
@@ -88,6 +128,9 @@ class MainWindow(QMainWindow):
         self._syncing_view: bool = False
         self._current_mode: str = "Color RGB"
         self._syncing_mode: bool = False
+
+        # Generic feature worker state (all non-snake features)
+        self._feature_worker: Optional[FeatureWorker] = None
 
         # Snake execution & animation state
         self._snake_worker: Optional[SnakeWorker] = None
@@ -724,17 +767,8 @@ class MainWindow(QMainWindow):
             self._start_snake_worker(entry, in_win, in_arr, params, out_win)
             return
 
-        # ── Standard features (Canny, Lines, Circles, Ellipses) ──────────────
-        def _do_run() -> None:
-            output = run_feature(
-                entry,
-                in_arr,
-                params,
-                second=second_arr,
-            )
-            self._apply_feature_output(entry, in_arr, output, out_win)
-
-        run_safely(_do_run, self)
+        # ── All standard features run via FeatureWorker (progress bar shown) ─
+        self._start_feature_worker(entry, in_arr, params, second_arr, out_win)
 
     def _apply_feature_output(
         self,
@@ -770,6 +804,41 @@ class MainWindow(QMainWindow):
     # =========================================================================
     # Snake QThread Worker & Live Animation
     # =========================================================================
+
+    def _start_feature_worker(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        params: dict,
+        second_arr: Optional[np.ndarray],
+        out_win: "ImageViewer",
+    ) -> None:
+        """Launch any standard feature in a background thread and show progress bar."""
+        self._sidebar.show_progress(True)
+        self._feature_worker = FeatureWorker(entry, in_arr, params, second_arr, self)
+        self._feature_worker.result_ready.connect(
+            lambda output: self._on_feature_worker_done(entry, in_arr, output, out_win)
+        )
+        self._feature_worker.error_occurred.connect(self._on_feature_worker_error)
+        self._feature_worker.start()
+
+    def _on_feature_worker_done(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        output,
+        out_win: "ImageViewer",
+    ) -> None:
+        """Called when FeatureWorker finishes: hide progress bar and render output."""
+        self._sidebar.show_progress(False)
+        self._feature_worker = None
+        self._apply_feature_output(entry, in_arr, output, out_win)
+
+    def _on_feature_worker_error(self, exc: Exception) -> None:
+        """Called when FeatureWorker raises an exception."""
+        self._sidebar.show_progress(False)
+        self._feature_worker = None
+        show_error(exc, self)
 
     def _start_snake_worker(
         self,
@@ -834,6 +903,7 @@ class MainWindow(QMainWindow):
 
         self._anim_target_viewer = out_win
         self._sidebar.show_cancel_snake(True)
+        self._sidebar.show_progress(True)
 
         self._snake_worker = SnakeWorker(gray, pts, sp, self)
         self._snake_worker.result_ready.connect(
@@ -844,6 +914,7 @@ class MainWindow(QMainWindow):
 
     def _on_snake_worker_error(self, exc: Exception) -> None:
         self._sidebar.show_cancel_snake(False)
+        self._sidebar.show_progress(False)
         self._snake_worker = None
         show_error(exc, self)
 
@@ -853,6 +924,7 @@ class MainWindow(QMainWindow):
             self._snake_worker.wait()
             self._snake_worker = None
         self._sidebar.show_cancel_snake(False)
+        self._sidebar.show_progress(False)
 
     def _on_snake_worker_done(
         self,
@@ -861,6 +933,7 @@ class MainWindow(QMainWindow):
         out_win: ImageViewer,
     ) -> None:
         self._sidebar.show_cancel_snake(False)
+        self._sidebar.show_progress(False)
         self._snake_worker = None
 
         if out_win.viewer_id != self._active_window_id or not out_win.has_image():

@@ -39,7 +39,24 @@ _HIT_RADIUS_PX     = 8.0
 # ===========================================================================
 
 class JumpSlider(QSlider):
-    """A QSlider whose handle jumps instantly to the clicked position."""
+    """A QSlider whose handle jumps instantly to the clicked position.
+
+    Mouse-wheel events are intentionally ignored so that scrolling over
+    a parameter slider never accidentally changes its value.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Only react to wheel when the widget has explicit keyboard focus
+        # (i.e. the user clicked it first).
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        """Ignore wheel scroll unless the slider has keyboard focus."""
+        if not self.hasFocus():
+            event.ignore()
+        else:
+            super().wheelEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -197,6 +214,7 @@ class ParamPanel(QGroupBox):
                     spin.setSingleStep(stp)
                     spin.setValue(dflt)
                     spin.setFixedWidth(70)
+                    spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
                     # Bidirectional sync without infinite loops
                     slider.valueChanged.connect(spin.setValue)
@@ -222,6 +240,7 @@ class ParamPanel(QGroupBox):
                     spin.setDecimals(decs)
                     spin.setValue(dflt)
                     spin.setFixedWidth(75)
+                    spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
                     def _s2sp(v: int, sp: QDoubleSpinBox = spin, sc: int = scale) -> None:
                         sp.blockSignals(True)

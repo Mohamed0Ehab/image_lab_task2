@@ -12,9 +12,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui  import QColor
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QColorDialog, QComboBox, QFrame,
-    QGroupBox, QHBoxLayout, QLabel, QPushButton, QRadioButton,
-    QScrollArea, QSizePolicy, QSlider, QSpinBox, QToolButton,
-    QVBoxLayout, QWidget,
+    QGroupBox, QHBoxLayout, QLabel, QProgressBar, QPushButton,
+    QRadioButton, QScrollArea, QSizePolicy, QSlider, QSpinBox,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from gui.features import CATALOG, FeatureEntry, get_entry
@@ -146,12 +146,14 @@ class Sidebar(QScrollArea):
         self._build_params()
         self._build_routing()
         self._build_actions()
+        self._build_progress_bar()
         self._build_snake_section()
         self._build_overlay_section()
         self._build_history()
 
         self._body_layout.addStretch()
         self._update_controls_enabled()
+
 
     # =========================================================================
     # Section builders
@@ -381,6 +383,26 @@ class Sidebar(QScrollArea):
         cl.addWidget(swap_row)
 
         self._body_layout.addWidget(box)
+
+    def _build_progress_bar(self) -> None:
+        """Build the indeterminate progress bar shown during long operations."""
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 0)   # indeterminate (pulsing) mode
+        self._progress_bar.setFixedHeight(6)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setStyleSheet(
+            "QProgressBar {"
+            "  background-color: #313244;"
+            "  border: none;"
+            "  border-radius: 3px;"
+            "}"
+            "QProgressBar::chunk {"
+            "  background-color: #89b4fa;"
+            "  border-radius: 3px;"
+            "}"
+        )
+        self._progress_bar.hide()
+        self._body_layout.addWidget(self._progress_bar)
 
     def _build_snake_section(self) -> None:
         self._snake_box = CollapsibleBox("Active Contour (Snake)")
@@ -742,6 +764,10 @@ class Sidebar(QScrollArea):
     def show_cancel_snake(self, visible: bool) -> None:
         """Show or hide the Cancel button during a snake run."""
         self._btn_cancel_snake.setVisible(visible)
+
+    def show_progress(self, visible: bool) -> None:
+        """Show or hide the indeterminate progress bar."""
+        self._progress_bar.setVisible(visible)
 
     def update_history(self, history: list[str]) -> None:
         """Show the active window's operation history as a breadcrumb."""
