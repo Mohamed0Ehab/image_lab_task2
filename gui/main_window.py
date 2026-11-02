@@ -526,6 +526,33 @@ class MainWindow(QMainWindow):
     # File Operations (Load, Save, Clear, Mode Change)
     # =========================================================================
 
+    def _clear_output_for_viewer(self, viewer_id: int) -> None:
+        """Clear previous outputs, overlays, and contours when a new photo is loaded."""
+        viewer = self._get_viewer(viewer_id)
+        viewer.overlay().clear()
+        viewer.clear_contour()
+        viewer.display_widget().update()
+
+        # If viewer_id is the routed input window, also clear any previous feature output
+        # in the designated output window
+        in_a, _, out = self._sidebar.routing_ids()
+        target_out = in_a if out == 0 else out
+        if viewer_id == in_a and target_out != viewer_id:
+            out_win = self._get_viewer(target_out)
+            if out_win.overlay().has_content() or any(
+                not op.startswith("Load") and not op.startswith("Copy")
+                for op in out_win.history()
+            ):
+                self._clear_window(target_out)
+
+        # Clear snake results in sidebar and stop any running animation
+        self._sidebar.clear_snake_result()
+        if self._anim_timer.isActive():
+            self._anim_timer.stop()
+        self._anim_history = []
+        self._anim_frame_idx = 0
+        self._anim_target_viewer = None
+
     def _open_image_dialog(self, viewer_id: int, mode: Optional[str] = None) -> None:
         """Open a file dialog and load an image into Window *viewer_id*."""
         viewer = self._get_viewer(viewer_id)
@@ -541,6 +568,7 @@ class MainWindow(QMainWindow):
             return
 
         def _do_load() -> None:
+            self._clear_output_for_viewer(viewer_id)
             img_data = ImageData.load(path, as_gray=(target_mode == "Grayscale"))
             viewer.set_source_and_display(img_data, op_name=f"Load ({Path(path).name})")
             self._set_active_window(viewer_id)
@@ -553,6 +581,7 @@ class MainWindow(QMainWindow):
         viewer = self._get_viewer(viewer_id)
 
         def _do_drop() -> None:
+            self._clear_output_for_viewer(viewer_id)
             img_data = ImageData.load(file_path, as_gray=(self._current_mode == "Grayscale"))
             viewer.set_source_and_display(img_data, op_name=f"Load ({Path(file_path).name})")
             self._set_active_window(viewer_id)

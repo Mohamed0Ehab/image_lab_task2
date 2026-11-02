@@ -929,7 +929,15 @@ class ImageViewer(QGroupBox):
             self._image_data = ImageData.from_array(array_or_data)
             self._source     = array_or_data
 
-        self._history.append(op_name)
+        if op_name.startswith("Load"):
+            self._overlay.clear()
+            self.clear_contour()
+            self._history = [op_name]
+            self._undo_source     = None
+            self._undo_current    = None
+            self._undo_image_data = None
+        else:
+            self._history.append(op_name)
         self.apply_mode()
 
     def apply_mode(self) -> None:
