@@ -11,6 +11,7 @@ from core.canny_lines import sobel_gradients
 from scipy.ndimage import gaussian_filter
 from core.types import SnakeParams, SnakeResult
 
+CM_PER_PX = 0.05
 
 def run_snake(
     gray: np.ndarray,
@@ -46,7 +47,7 @@ def run_snake(
     for iter in range(max_iter): # iterate through contours
         moved = 0
         for i in range(len(contour)):  # for each point in contour: calc energy & converge
-            p0 = contour[(i-1) % len(contour)]
+            p0 = contour[(i-1) % len(contour)]  # circular loop
             p1 = contour[i]
             p2 = contour[(i+1) % len(contour)]
             Candidates = get_candidate(p1, image) # reutrn list of tuples
@@ -92,14 +93,13 @@ def image_energy(mag, pnt):
     r, c = pnt[1], pnt[0]             # pnt is (x, y): row = y, col = x
     return -mag[int(r), int(c)]
 
+
 def calc_perimeter(contour):
     n = len(contour)
     perimeter_pixel = 0.0
     for i in range(n):
-        p1 = contour[i]
-        p2 = contour[(i+1) % n]
-        perimeter_pixel +=  hypot(p1, p2)
-    return (convert_pixel_cm(perimeter_pixel), perimeter_pixel )
+        perimeter_pixel += hypot(contour[i], contour[(i+1) % n])
+    return (perimeter_pixel * CM_PER_PX, perimeter_pixel)
 
 def calc_area(contour):
     n = len(contour)
@@ -107,13 +107,9 @@ def calc_area(contour):
     for i in range(n):
         p1 = contour[i]
         p2 = contour[(i+1) % n]
-        s += (p1[0] * p2[1]) - (p2[0] * p1[1]) 
-        area_pixel = abs(s)/2
-    return (convert_pixel_cm(area_pixel), area_pixel)
-
-def convert_pixel_cm(value):
-    cm_per_px = 0.05
-    return value * cm_per_px
+        s += (p1[0] * p2[1]) - (p2[0] * p1[1])
+    area_pixel = abs(s) / 2                      # after the loop
+    return (area_pixel * CM_PER_PX**2, area_pixel)
 
 def get_chain_code(contour):
     # (dx, dy) -> Freeman code; y grows downward in images
