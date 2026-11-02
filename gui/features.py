@@ -206,11 +206,11 @@ CATALOG: dict[str, list[FeatureEntry]] = {
                     "step": 1, "default": 100,
                     "label": "Max Radius (px)",
                 },
-                # 1 = gradient (fast, default), 0 = standard 3-D accumulator
-                "gradient_method": {
-                    "type": "int", "min": 0, "max": 1,
-                    "step": 1, "default": 1,
-                    "label": "Method (1 = Gradient, 0 = Standard)",
+                # True = gradient (fast, default), False = standard 3-D accumulator
+                "use_gradient": {
+                    "type": "bool",
+                    "label": "Use Gradient Method (faster)",
+                    "default": True,
                 },
                 "threshold": {
                     "type": "float", "min": 0.1, "max": 1.0,
@@ -386,7 +386,7 @@ def run_feature(
         # First stage: Canny edge detection (binary edge map, not raw gray).
         edges = _canny_edges(gray, params)
 
-        method = "gradient" if int(params.get("gradient_method", 1)) else "standard"
+        method = "gradient" if bool(params.get("use_gradient", True)) else "standard"
         shapes = entry.func(
             edges,
             params["r_min"],

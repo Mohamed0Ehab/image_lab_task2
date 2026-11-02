@@ -70,6 +70,36 @@ class SnakeWorker(QThread):
 
 
 # ===========================================================================
+# Background worker for Hough Circles
+# ===========================================================================
+
+class HoughCirclesWorker(QThread):
+    """Background worker for hough_circles so the UI stays responsive."""
+
+    result_ready   = Signal(object)      # list[Circle]
+    error_occurred = Signal(Exception)
+
+    def __init__(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        params: dict,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._entry  = entry
+        self._in_arr = in_arr
+        self._params = params
+
+    def run(self) -> None:
+        try:
+            output = run_feature(self._entry, self._in_arr, self._params)
+            self.result_ready.emit(output)
+        except Exception as exc:
+            self.error_occurred.emit(exc)
+
+
+# ===========================================================================
 # MainWindow
 # ===========================================================================
 
@@ -88,6 +118,9 @@ class MainWindow(QMainWindow):
         self._syncing_view: bool = False
         self._current_mode: str = "Color RGB"
         self._syncing_mode: bool = False
+
+        # Hough Circles worker state
+        self._hough_worker: Optional[HoughCirclesWorker] = None
 
         # Snake execution & animation state
         self._snake_worker: Optional[SnakeWorker] = None
@@ -724,7 +757,12 @@ class MainWindow(QMainWindow):
             self._start_snake_worker(entry, in_win, in_arr, params, out_win)
             return
 
-        # ── Standard features (Canny, Lines, Circles, Ellipses) ──────────────
+        # ── Hough Circles (QThread worker with progress bar) ─────────────────
+        if entry.kind == "circles":
+            self._start_hough_circles_worker(entry, in_arr, params, out_win)
+            return
+
+        # ── Standard features (Canny, Lines, Ellipses) ───────────────────────
         def _do_run() -> None:
             output = run_feature(
                 entry,
@@ -770,6 +808,40 @@ class MainWindow(QMainWindow):
     # =========================================================================
     # Snake QThread Worker & Live Animation
     # =========================================================================
+
+    def _start_hough_circles_worker(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        params: dict,
+        out_win: "ImageViewer",
+    ) -> None:
+        """Launch Hough Circles in a background thread and show progress bar."""
+        self._sidebar.show_progress(True)
+        self._hough_worker = HoughCirclesWorker(entry, in_arr, params, self)
+        self._hough_worker.result_ready.connect(
+            lambda output: self._on_hough_circles_done(entry, in_arr, output, out_win)
+        )
+        self._hough_worker.error_occurred.connect(self._on_hough_circles_error)
+        self._hough_worker.start()
+
+    def _on_hough_circles_done(
+        self,
+        entry,
+        in_arr: np.ndarray,
+        output,
+        out_win: "ImageViewer",
+    ) -> None:
+        """Called when HoughCirclesWorker finishes: hide progress bar and render."""
+        self._sidebar.show_progress(False)
+        self._hough_worker = None
+        self._apply_feature_output(entry, in_arr, output, out_win)
+
+    def _on_hough_circles_error(self, exc: Exception) -> None:
+        """Called when HoughCirclesWorker raises an exception."""
+        self._sidebar.show_progress(False)
+        self._hough_worker = None
+        show_error(exc, self)
 
     def _start_snake_worker(
         self,
