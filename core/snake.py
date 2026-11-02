@@ -31,21 +31,17 @@ def run_snake(
     """
 
     image = gray.copy()
+    contour = init_pts.copy()
+
     _, _, mag, _ = sobel_gradients(image)
     mag = gaussian_filter(mag.astype(float), sigma=8)   # extra blur for noise reduction: Sobel's 3x3 smoothing is too small to reach distant points
-    mag = normalize(mag)
+    mag = normalize(mag)        # Without normalize, e_img will be dominant
 
-    contour = init_pts.copy()
     hist = [contour.copy()]
     
-    alpha, beta = scale_weights(contour, params.alpha, params.beta)
+    alpha, beta = scale_weights(contour, params.alpha, params.beta)  # without scale, they are in hundreds or thousands
     gamma = params.gamma
     max_iter = params.max_iter
-    
-    n = len(contour)
-    d2 = sum(hypot(contour[i], contour[(i+1) % n])**2 for i in range(n)) / n   # mean squared spacing
-    alpha = params.alpha / d2
-    beta = params.beta / d2
     
     for iter in range(max_iter): # iterate through contours
         moved = 0
